@@ -11,6 +11,7 @@ import numpy as np
 from pathlib import Path
 import time
 from datetime import datetime
+import csv
 
 FLOWSHEET_DIR = Path("/N/project/analgesia_perioperation/data/MOVER/raw/srv/EPIC_flowsheets")
 COHORT_FILE   = Path("/N/project/analgesia_perioperation/data/MOVER/processed/final_single_mrn_single_login_with_definable_intraop_time.csv")
@@ -26,6 +27,35 @@ MODULE_MAPPING = {
     "labs_poct": ["Glycemic Control - POCT", "POCT"],
     "events_checklist": ["Anesthesia Checklist", "Verification", "Pre Proc Verification and Time Out", "Debriefing", "Pre Procedure Documentation", "Patient Position", "Complication/Disposition"]
 }
+
+EXPECTED_COLUMNS = [
+    "OR_CASE_ID", "LOG_ID", "PAT_ID", "MRN", "HSP_ACCOUNT_ID", "OR_LINK_CSN",
+    "PAT_ENC_CSN_ID", "ENC_TYPE_C", "ENC_TYPE_NM", "SURGERY_DATE", "IN_OR_DTTM",
+    "OUT_OR_DTTM", "AN_START_DATETIME", "AN_STOP_DATETIME", "INPATIENT_DATA_ID",
+    "FSD_ID", "FLO_MEAS_ID", "FLO_TEMPLATE_NAME", "FLO_NAME", "FLO_MEAS_NAME",
+    "FLO_DISPLAY_NAME", "RECORD_TYPE", "RECORDED_TIME", "MEAS_VALUE", "UNITS",
+    "MEAS_COMMENT", "LINE"
+]
+
+def file_has_header(filepath):
+    """检查首行是否包含标准列名 LOG_ID。"""
+    try:
+        with filepath.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+            first_row = next(csv.reader(f))
+        return "LOG_ID" in first_row
+    except Exception:
+        return False
+
+def make_csv_reader(filepath, has_header, chunk_size):
+    """兼容新旧 pandas 版本的分块读取。"""
+    base_kwargs = dict(chunksize=chunk_size, engine='python')
+    if not has_header:
+        base_kwargs.update(dict(header=None, names=EXPECTED_COLUMNS))
+    try:
+        return pd.read_csv(filepath, on_bad_lines='skip', **base_kwargs)
+    except TypeError:
+        # 老版本 pandas 使用 error_bad_lines / warn_bad_lines
+        return pd.read_csv(filepath, error_bad_lines=False, warn_bad_lines=False, **base_kwargs)
 
 def get_module(flo_name):
     if pd.isna(flo_name): return "other"
@@ -58,13 +88,18 @@ def process_one_file(filepath, cohort_dict):
     total_rows = kept_rows = 0
     sub_idx = 0
 
-    # 这里的改进：engine='python' 慢但稳，绝不崩
-    reader = pd.read_csv(filepath, chunksize=chunk_size, on_bad_lines='skip', engine='python')
+    # 兼容混合输入：部分文件有表头，部分文件无表头
+    has_header = file_has_header(filepath)
+    if not has_header:
+        print(f"  [INFO] {fname}: no header detected, applying EXPECTED_COLUMNS.")
+    reader = make_csv_reader(filepath, has_header=has_header, chunk_size=chunk_size)
 
     for i, chunk in enumerate(reader):
         try:
             total_rows += len(chunk)
-            if "LOG_ID" not in chunk.columns: break
+            if "LOG_ID" not in chunk.columns:
+                print(f"  [WARN] chunk {i}: LOG_ID missing, skip this chunk.")
+                continue
             chunk = chunk[chunk["LOG_ID"].isin(cohort_dict)].copy()
             if chunk.empty: continue
 
@@ -72,6 +107,9 @@ def process_one_file(filepath, cohort_dict):
             if time_col not in chunk.columns:
                 for alt in ["recorded_time", "AN_START_DATETIME"]:
                     if alt in chunk.columns: time_col = alt; break
+            if time_col not in chunk.columns:
+                print(f"  [WARN] chunk {i}: no usable time column, skip this chunk.")
+                continue
             
             # 使用最稳健的日期解析
             chunk["_dt"] = safe_to_datetime(chunk[time_col])
