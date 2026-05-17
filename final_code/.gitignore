@@ -1,0 +1,25 @@
+# Python cache / runtime artifacts
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# R/session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+
+# Data outputs: this repository is code-only
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.rds
+*.RDS
+*.xlsx
+*.xls
+*.jsonl

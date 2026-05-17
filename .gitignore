@@ -1,0 +1,43 @@
+# This repository is for final code only.
+# Data and intermediate artifacts must not be uploaded to GitHub.
+
+# Ignore everything at the project root by default
+/*
+
+# Keep repository metadata and final code
+!/.gitignore
+!/final_code/
+!/final_code/**
+
+# Never track data / archive outputs
+/final_data/
+/archive/
+
+# Python cache / runtime artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# R/session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+
+# Data file formats, even if accidentally copied under final_code
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.rds
+*.RDS
+*.xlsx
+*.xls
+*.jsonl
+*.pkl
+*.pickle
