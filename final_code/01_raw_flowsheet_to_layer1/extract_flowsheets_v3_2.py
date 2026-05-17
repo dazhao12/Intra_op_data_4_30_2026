@@ -18,15 +18,6 @@ OUTPUT_DIR    = Path("/N/project/analgesia_perioperation/data/MOVER/processed/In
 PARTS_DIR     = OUTPUT_DIR / "parts_v3"
 PARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-FLOWSHEET_COLUMNS = [
-    "OR_CASE_ID", "LOG_ID", "PAT_ID", "MRN", "HSP_ACCOUNT_ID", "OR_LINK_CSN",
-    "PAT_ENC_CSN_ID", "ENC_TYPE_C", "ENC_TYPE_NM", "SURGERY_DATE",
-    "IN_OR_DTTM", "OUT_OR_DTTM", "AN_START_DATETIME", "AN_STOP_DATETIME",
-    "INPATIENT_DATA_ID", "FSD_ID", "FLO_MEAS_ID", "FLO_TEMPLATE_NAME",
-    "FLO_NAME", "FLO_MEAS_NAME", "FLO_DISPLAY_NAME", "RECORD_TYPE",
-    "RECORDED_TIME", "MEAS_VALUE", "UNITS", "MEAS_COMMENT", "LINE",
-]
-
 MODULE_MAPPING = {
     "vitals": ["Devices Testing Template", "Anesthesia Monitoring", "Invasive", "Non-Invasive", "Vitals", "Vital Signs", "BP/Pulse", "Quick Vitals", "Trauma Arrival/Mode/Vitals", "Code Vital Signs", "Code Vitals"],
     "respiratory": ["Anesthesia Agents", "Respiratory", "General Respiratory", "O2 Device/Airway", "Extubation Assessment", "Resp Review", "NICU RT", "General Resp"],
@@ -50,11 +41,6 @@ def safe_to_datetime(series):
     except:
         return series.apply(lambda x: pd.to_datetime(x, errors='coerce'))
 
-def has_header(filepath):
-    with filepath.open("r", errors="replace") as f:
-        first_token = f.readline().split(",", 1)[0].strip().strip('"')
-    return first_token == "OR_CASE_ID"
-
 def load_cohort():
     df = pd.read_csv(COHORT_FILE, low_memory=False)
     df["win_start"] = pd.to_datetime(df["anesthesia_start_time"], errors="coerce")
@@ -73,11 +59,7 @@ def process_one_file(filepath, cohort_dict):
     sub_idx = 0
 
     # 这里的改进：engine='python' 慢但稳，绝不崩
-    read_kwargs = dict(chunksize=chunk_size, on_bad_lines='skip', engine='python')
-    if has_header(filepath):
-        reader = pd.read_csv(filepath, **read_kwargs)
-    else:
-        reader = pd.read_csv(filepath, header=None, names=FLOWSHEET_COLUMNS, **read_kwargs)
+    reader = pd.read_csv(filepath, chunksize=chunk_size, on_bad_lines='skip', engine='python')
 
     for i, chunk in enumerate(reader):
         try:
