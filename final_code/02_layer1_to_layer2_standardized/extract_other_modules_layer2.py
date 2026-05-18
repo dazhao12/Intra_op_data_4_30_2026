@@ -72,11 +72,29 @@ def standardize_module(module_name):
     print(f"Processing {module_name}: {input_file}")
     df = pd.read_parquet(
         input_file,
-        columns=["LOG_ID", "RECORDED_TIME", "FLO_MEAS_NAME", "MEAS_VALUE"],
+        columns=["LOG_ID", "RECORDED_TIME", "FLO_NAME", "FLO_MEAS_NAME", "MEAS_VALUE"],
     )
     df = df.dropna(subset=["LOG_ID", "RECORDED_TIME", "FLO_MEAS_NAME"]).copy()
     df["RECORDED_TIME"] = pd.to_datetime(df["RECORDED_TIME"], errors="coerce")
     df = df[df["RECORDED_TIME"].notna()].copy()
+
+    event_frames = []
+    if module_name == "respiratory":
+        extubation = df[
+            (df["FLO_NAME"].astype(str).str.strip() == "Extubation Assessment")
+            & (df["FLO_MEAS_NAME"].astype(str).str.strip() == "UC ANE EXTUBATION EVENT")
+            & df["MEAS_VALUE"].astype(str).str.upper().str.contains("EXTUBATED", na=False)
+        ].copy()
+        if not extubation.empty:
+            extubation["RECORDED_TIME"] = extubation["RECORDED_TIME"].dt.floor("1min")
+            extubation["VITAL_NAME"] = "Extubation_event"
+            extubation["VITAL_VALUE"] = 1.0
+            extubation = (
+                extubation[["LOG_ID", "RECORDED_TIME", "VITAL_NAME", "VITAL_VALUE"]]
+                .drop_duplicates()
+            )
+            event_frames.append(extubation)
+            print(f"  Extubation_event rows added: {len(extubation):,}")
 
     vals = pd.to_numeric(df["MEAS_VALUE"], errors="coerce")
     df = df[vals.notna()].copy()
@@ -91,6 +109,12 @@ def standardize_module(module_name):
         .median()
         .rename(columns={"MEAS_VALUE": "VITAL_VALUE"})
     )
+    if event_frames:
+        df_aligned = pd.concat([df_aligned] + event_frames, ignore_index=True)
+        df_aligned = (
+            df_aligned.groupby(["LOG_ID", "RECORDED_TIME", "VITAL_NAME"], as_index=False)["VITAL_VALUE"]
+            .max()
+        )
     df_aligned.to_parquet(output_file, index=False)
     print(f"  Saved {output_file.name}: {len(df_aligned):,} rows")
 

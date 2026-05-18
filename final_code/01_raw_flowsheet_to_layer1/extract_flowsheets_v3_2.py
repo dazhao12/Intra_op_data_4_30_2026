@@ -28,6 +28,49 @@ MODULE_MAPPING = {
     "events_checklist": ["Anesthesia Checklist", "Verification", "Pre Proc Verification and Time Out", "Debriefing", "Pre Procedure Documentation", "Patient Position", "Complication/Disposition"]
 }
 
+VITALS_EXTRA_FLO_NAMES = {
+    "Custom Formula Data",
+    "CCP Vital Signs",
+    "ED Vitals",
+    "Vitals/Screening",
+    "Code Quick Vitals",
+    "Height/Weight",
+    "IP Nutrition",
+}
+
+IO_EXTRA_FLO_NAMES = {
+    "CCP Intake/Output",
+    "OR Input/Output",
+}
+
+NEURO_OR_PAIN_FLO_NAMES = {
+    "Pain Mgmt",
+    "Pain Screening",
+}
+
+PAIN_MEAS_TOKENS = ("PAIN",)
+IO_MEAS_TOKENS = (
+    "URINE OUTPUT",
+    "URINARY DRAIN OUTPUT",
+    "ESTIMATED BLOOD LOSS",
+    "MAINTENANCE FLUID VOLUME",
+)
+VITALS_MEAS_TOKENS = (
+    "BLOOD PRESSURE",
+    "SYSTOLIC BP",
+    "DIASTOLIC BP",
+    "MAP",
+    "PULSE",
+    "RESPIRATIONS",
+    "TEMPERATURE",
+    "TEMP SOURCE",
+    "WEIGHT",
+    "HEIGHT",
+    "BMI",
+    "BSA",
+    "CARDIAC RHYTHM",
+)
+
 EXPECTED_COLUMNS = [
     "OR_CASE_ID", "LOG_ID", "PAT_ID", "MRN", "HSP_ACCOUNT_ID", "OR_LINK_CSN",
     "PAT_ENC_CSN_ID", "ENC_TYPE_C", "ENC_TYPE_NM", "SURGERY_DATE", "IN_OR_DTTM",
@@ -63,6 +106,20 @@ def get_module(flo_name):
     for mod, keys in MODULE_MAPPING.items():
         if name in keys: return mod
     return "other"
+
+def get_module_from_row(row):
+    flo_name = "" if pd.isna(row.get("FLO_NAME")) else str(row.get("FLO_NAME")).strip()
+    flo_meas = "" if pd.isna(row.get("FLO_MEAS_NAME")) else str(row.get("FLO_MEAS_NAME")).strip().upper()
+    flo_display = "" if pd.isna(row.get("FLO_DISPLAY_NAME")) else str(row.get("FLO_DISPLAY_NAME")).strip().upper()
+    meas_text = f"{flo_meas} {flo_display}"
+
+    if flo_name in NEURO_OR_PAIN_FLO_NAMES or any(tok in meas_text for tok in PAIN_MEAS_TOKENS):
+        return "neuro"
+    if flo_name in IO_EXTRA_FLO_NAMES or any(tok in meas_text for tok in IO_MEAS_TOKENS):
+        return "io"
+    if flo_name in VITALS_EXTRA_FLO_NAMES or any(tok in meas_text for tok in VITALS_MEAS_TOKENS):
+        return "vitals"
+    return get_module(flo_name)
 
 def safe_to_datetime(series):
     """最稳健的日期转换：如果向量化转换崩了，就回退到循环转换"""
@@ -122,11 +179,15 @@ def process_one_file(filepath, cohort_dict):
             chunk = chunk[in_win].copy()
             if chunk.empty: continue
 
-            chunk["_mod"] = chunk["FLO_NAME"].apply(get_module)
+            chunk["_mod"] = chunk.apply(get_module_from_row, axis=1)
             for mod, grp in chunk.groupby("_mod"):
                 if grp.empty: continue
                 out_name = f"{filepath.stem}__{mod}__part{sub_idx}.parquet"
-                grp.drop(columns=["_dt", "_ws", "_we", "_mod"], errors='ignore').to_parquet(PARTS_DIR / out_name, index=False)
+                grp.drop(columns=["_dt", "_ws", "_we", "_mod"], errors='ignore').to_parquet(
+                    PARTS_DIR / out_name,
+                    index=False,
+                    compression="gzip"
+                )
                 kept_rows += len(grp)
             
             sub_idx += 1

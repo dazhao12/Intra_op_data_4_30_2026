@@ -41,7 +41,7 @@ def merge_all():
             final_df.drop_duplicates(subset=subset, inplace=True, errors='ignore')
             
             out_path = BASE_DIR / f"intraop_{mod}_layer1.parquet"
-            final_df.to_parquet(out_path, index=False)
+            final_df.to_parquet(out_path, index=False, compression="gzip")
             print(f"  [SUCCESS] {out_path.name}: {len(final_df):,} rows saved.")
 
 def cleanup():
